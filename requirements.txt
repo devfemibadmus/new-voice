@@ -1,0 +1,4 @@
+pypdf==5.2.0
+pydub==0.25.1
+requests==2.31.0
+TTS==0.22.0
