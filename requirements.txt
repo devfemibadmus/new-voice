@@ -1,4 +1,10 @@
-pypdf==5.2.0
-pydub==0.25.1
 requests==2.31.0
+pydub==0.25.1
 TTS==0.22.0
+
+# Optional only if you use a PDF transcript instead of data/transcript.txt
+pypdf==6.7.5
+
+# Non-pip prerequisites:
+# - Gentle forced aligner running at http://localhost:8765
+# - ffmpeg only if you use compressed audio input like .mp4

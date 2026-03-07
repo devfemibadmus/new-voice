@@ -1,17 +1,40 @@
+from pathlib import Path
+
 from pydub import AudioSegment
-import os
 
-def convert_mp4_wav(audio_path="data/recording.mp4"):
-    if not os.path.exists(audio_path):
-        print(f"{audio_path} not found")
+
+DEFAULT_AUDIO_CANDIDATES = ("data/voice.wav", "data/recording.mp4")
+
+
+def resolve_audio_source(audio_path=None):
+    if audio_path:
+        return Path(audio_path)
+
+    for candidate in DEFAULT_AUDIO_CANDIDATES:
+        path = Path(candidate)
+        if path.exists():
+            return path
+
+    return Path(DEFAULT_AUDIO_CANDIDATES[0])
+
+
+def prepare_voice_audio(audio_path=None, output_path="generated/recording.wav"):
+    source_path = resolve_audio_source(audio_path)
+    output_file = Path(output_path)
+
+    if not source_path.exists():
+        print(f"{source_path} not found")
         return
-    if os.path.exists("generated/recording.wav"):
-        print("generated/recording.wav already exists")
+
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    if output_file.exists():
+        print(f"{output_file} already exists")
         return
-    audio = AudioSegment.from_file(audio_path, format="mp4")
-    wav_path = "generated/recording.wav"
-    audio.export(wav_path, format="wav")
-    print("Wav recording created and saved to generated/recording.wav")
+
+    audio = AudioSegment.from_file(source_path)
+    audio.export(output_file, format="wav")
+    print(f"Voice audio prepared from {source_path} and saved to {output_file}")
 
 
-convert_mp4_wav()
+def convert_mp4_wav(audio_path=None, output_path="generated/recording.wav"):
+    prepare_voice_audio(audio_path=audio_path, output_path=output_path)
