@@ -2,6 +2,8 @@ import argparse
 from pathlib import Path
 
 from TTS.api import TTS
+from TTS.utils.generic_utils import get_user_data_dir
+from TTS.utils.manage import ModelManager
 
 
 MODEL_PATTERNS = (
@@ -12,6 +14,8 @@ MODEL_PATTERNS = (
     "*.pt",
     "*.bin",
 )
+DEFAULT_TTS_MODEL_NAME = "tts_models/en/ljspeech/glow-tts"
+DEFAULT_VOCODER_MODEL_NAME = "vocoder_models/en/ljspeech/hifigan_v2"
 
 
 def parse_args():
@@ -24,6 +28,16 @@ def parse_args():
     parser.add_argument("--config-path", help="Explicit config.json path. Overrides automatic discovery.")
     parser.add_argument("--vocoder-path", help="Optional local vocoder checkpoint path.")
     parser.add_argument("--vocoder-config-path", help="Optional local vocoder config path.")
+    parser.add_argument(
+        "--tts-model-name",
+        default=DEFAULT_TTS_MODEL_NAME,
+        help=f"Default pretrained TTS model to use if no local run or explicit checkpoint is provided. Default: {DEFAULT_TTS_MODEL_NAME}",
+    )
+    parser.add_argument(
+        "--vocoder-model-name",
+        default=DEFAULT_VOCODER_MODEL_NAME,
+        help=f"Default vocoder model to download if no local vocoder path is provided. Default: {DEFAULT_VOCODER_MODEL_NAME}",
+    )
     parser.add_argument("--use-cuda", action="store_true", help="Move the synthesizer to CUDA after loading.")
     return parser.parse_args()
 
@@ -76,28 +90,55 @@ def find_config(model_path, explicit_config_path=None):
     raise FileNotFoundError(f"Could not find config.json near {model_path}")
 
 
+def download_model_dir(model_name):
+    print(f"Downloading or locating model: {model_name}")
+    ModelManager().download_model(model_name)
+    model_dir = Path(get_user_data_dir("tts")) / model_name.replace("/", "--")
+    if not model_dir.exists():
+        raise FileNotFoundError(f"Downloaded model directory not found for {model_name}: {model_dir}")
+    return model_dir
+
+
 def resolve_paths(args):
     if args.model_path:
         model_path = Path(args.model_path)
         if not model_path.exists():
             raise FileNotFoundError(f"Model checkpoint not found: {model_path}")
     else:
-        run_dir = Path(args.run_dir) if args.run_dir else latest_run_dir(args.output_dir)
-        model_path = find_checkpoint(run_dir)
+        try:
+            run_dir = Path(args.run_dir) if args.run_dir else latest_run_dir(args.output_dir)
+            model_path = find_checkpoint(run_dir)
+        except FileNotFoundError:
+            model_dir = download_model_dir(args.tts_model_name)
+            model_path = find_checkpoint(model_dir)
 
     config_path = find_config(model_path, args.config_path)
     return model_path, config_path
 
 
+def resolve_vocoder_paths(args):
+    if args.vocoder_path and args.vocoder_config_path:
+        return args.vocoder_path, args.vocoder_config_path
+
+    if args.vocoder_path or args.vocoder_config_path:
+        raise FileNotFoundError("Provide both --vocoder-path and --vocoder-config-path, or neither.")
+
+    model_dir = download_model_dir(args.vocoder_model_name)
+    vocoder_path = find_checkpoint(model_dir)
+    vocoder_config_path = find_config(vocoder_path)
+    return str(vocoder_path), str(vocoder_config_path)
+
+
 def main():
     args = parse_args()
     model_path, config_path = resolve_paths(args)
+    vocoder_path, vocoder_config_path = resolve_vocoder_paths(args)
 
     tts = TTS(
         model_path=str(model_path),
         config_path=str(config_path),
-        vocoder_path=args.vocoder_path,
-        vocoder_config_path=args.vocoder_config_path,
+        vocoder_path=vocoder_path,
+        vocoder_config_path=vocoder_config_path,
     )
     if args.use_cuda:
         tts = tts.to("cuda")
@@ -106,6 +147,8 @@ def main():
     tts.tts_to_file(text=args.text, file_path=str(output_path))
     print(f"Loaded model: {model_path}")
     print(f"Loaded config: {config_path}")
+    print(f"Loaded vocoder: {vocoder_path}")
+    print(f"Loaded vocoder config: {vocoder_config_path}")
     print(f"Speech saved to {output_path}")
 
 

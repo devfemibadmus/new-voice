@@ -12,19 +12,28 @@ from TTS.tts.datasets import load_tts_samples
 from TTS.tts.models import setup_model as setup_tts_model
 from TTS.tts.utils.text.tokenizer import TTSTokenizer
 from TTS.utils.audio import AudioProcessor
+from TTS.utils.generic_utils import get_user_data_dir
+from TTS.utils.manage import ModelManager
 
 
 DEFAULT_DATASET_DIR = Path("generated")
 DEFAULT_PREPARED_DATASET_DIR = Path("generated_finetune")
 DEFAULT_OUTPUT_DIR = Path("output")
+DEFAULT_TTS_MODEL_NAME = "tts_models/en/ljspeech/glow-tts"
+MODEL_PATTERNS = ("best_model*.pth", "model*.pth", "checkpoint*.pth", "*.pth", "*.pt", "*.bin")
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Fine-tune a pretrained Coqui TTS model on a local single-speaker dataset."
     )
-    parser.add_argument("--config-path", required=True, help="Path to the pretrained model config.json.")
-    parser.add_argument("--restore-path", required=True, help="Path to the pretrained model checkpoint.")
+    parser.add_argument("--config-path", help="Path to the pretrained model config.json.")
+    parser.add_argument("--restore-path", help="Path to the pretrained model checkpoint.")
+    parser.add_argument(
+        "--model-name",
+        default=DEFAULT_TTS_MODEL_NAME,
+        help=f"Default pretrained TTS model to download when paths are not provided. Default: {DEFAULT_TTS_MODEL_NAME}",
+    )
     parser.add_argument("--dataset-dir", default=str(DEFAULT_DATASET_DIR), help="Directory containing dataset.csv and wavs/.")
     parser.add_argument(
         "--metadata-source",
@@ -60,6 +69,49 @@ def get_value(obj, key, default=None):
     if isinstance(obj, dict):
         return obj.get(key, default)
     return default
+
+
+def find_checkpoint(model_dir):
+    candidates = []
+    for pattern in MODEL_PATTERNS:
+        candidates.extend(model_dir.glob(pattern))
+
+    candidates = [path for path in candidates if path.is_file()]
+    if not candidates:
+        raise FileNotFoundError(f"No checkpoint file found in {model_dir}")
+
+    preferred_names = ("best_model", "model", "checkpoint")
+    candidates.sort(
+        key=lambda path: (
+            0 if any(path.name.startswith(prefix) for prefix in preferred_names) else 1,
+            -path.stat().st_mtime,
+        )
+    )
+    return candidates[0]
+
+
+def download_model_dir(model_name):
+    print(f"Downloading or locating pretrained model: {model_name}")
+    ModelManager().download_model(model_name)
+    model_dir = Path(get_user_data_dir("tts")) / model_name.replace("/", "--")
+    if not model_dir.exists():
+        raise FileNotFoundError(f"Downloaded model directory not found for {model_name}: {model_dir}")
+    return model_dir
+
+
+def resolve_pretrained_paths(args):
+    if args.config_path and args.restore_path:
+        return Path(args.config_path), Path(args.restore_path)
+
+    model_dir = download_model_dir(args.model_name)
+    config_path = Path(args.config_path) if args.config_path else model_dir / "config.json"
+    restore_path = Path(args.restore_path) if args.restore_path else find_checkpoint(model_dir)
+
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+    if not restore_path.exists():
+        raise FileNotFoundError(f"Checkpoint file not found: {restore_path}")
+    return config_path, restore_path
 
 
 def get_audio_duration_ms(path):
@@ -193,7 +245,8 @@ def build_dataset_config(prepared_dir, metadata_path, language, dataset_name):
 def main():
     args = parse_args()
 
-    config = load_config(args.config_path)
+    config_path, restore_path = resolve_pretrained_paths(args)
+    config = load_config(str(config_path))
     target_sample_rate = int(get_value(config.audio, "sample_rate"))
 
     prepared_dir, prepared_metadata = prepare_dataset(args, target_sample_rate)
@@ -225,7 +278,7 @@ def main():
     )
 
     model = setup_tts_model(config)
-    model.load_checkpoint(config, args.restore_path, eval=False)
+    model.load_checkpoint(config, str(restore_path), eval=False)
 
     trainer = Trainer(
         TrainerArgs(),

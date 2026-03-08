@@ -50,8 +50,12 @@ Install Python packages from [requirements.txt](/c:/Users/Femi.Badmus/Desktop/ne
 You also need:
 
 - Gentle forced aligner running at `http://localhost:8765`
-- A pretrained Coqui model checkpoint and matching `config.json`
 - `ffmpeg` only if you use compressed audio formats like `.mp3` or `.mp4`
+
+By default, this repo uses these pretrained Coqui models automatically:
+
+- TTS model: `tts_models/en/ljspeech/glow-tts`
+- Vocoder: `vocoder_models/en/ljspeech/hifigan_v2`
 
 Note: `TTS==0.22.0` is safer on Python 3.10 or 3.11 than on newer Python versions.
 
@@ -62,6 +66,47 @@ python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 ```
+
+## Before You Run Anything
+
+If you want these commands to work:
+
+```powershell
+python setup.py
+python train.py --run-name my-voice
+```
+
+you must have:
+
+- a `data/voices/` folder
+- a `data/transcripts/` folder
+- the same number of recordings and transcripts
+- each recording matched to the correct transcript
+- Gentle running at `http://localhost:8765`
+- internet access the first time `train.py` runs, so it can download the default pretrained model
+
+Recommended naming:
+
+- `data/voices/clip01.wav`
+- `data/transcripts/clip01.txt`
+- `data/voices/clip02.wav`
+- `data/transcripts/clip02.txt`
+
+Best practice:
+
+- use longer phrase-level or sentence-level recordings
+- make transcripts exact
+- keep one speaker only
+- prefer `.wav` and `.txt` unless you specifically need another format
+
+## Quick Start
+
+1. Put recordings in `data/voices/`
+2. Put matching transcripts in `data/transcripts/`
+3. Start Gentle
+4. Run `python setup.py`
+5. Run `python train.py --run-name my-voice`
+6. After training, run `python main.py --run-dir output\run-... --text "Hello world"`
 
 ## Step 1: Prepare Dataset
 
@@ -110,18 +155,12 @@ After setup runs, you will have:
 
 ## Step 2: Fine-Tune
 
-You need a pretrained model first:
+By default, `train.py` downloads and uses `tts_models/en/ljspeech/glow-tts` automatically.
 
-- `config.json`
-- `model.pth` or another valid checkpoint file
-
-Then run:
+Run:
 
 ```powershell
-python train.py `
-  --config-path C:\path\to\config.json `
-  --restore-path C:\path\to\model.pth `
-  --run-name my-voice
+python train.py --run-name my-voice
 ```
 
 Useful optional flags:
@@ -131,6 +170,9 @@ Useful optional flags:
 - `--learning-rate 1e-5`
 - `--output-dir output`
 - `--no-mixed-precision`
+- `--model-name tts_models/en/ljspeech/glow-tts`
+- `--config-path C:\path\to\config.json`
+- `--restore-path C:\path\to\model.pth`
 
 Training outputs go into `output/`.
 
@@ -145,6 +187,8 @@ python main.py `
   --output-path demo.wav
 ```
 
+`main.py` automatically downloads and uses `vocoder_models/en/ljspeech/hifigan_v2` as the default vocoder.
+
 You can also point directly at a checkpoint:
 
 ```powershell
@@ -153,6 +197,8 @@ python main.py `
   --config-path C:\path\to\config.json `
   --text "Hello world"
 ```
+
+If there is no local fine-tuned run yet, `main.py` falls back to the default pretrained Glow-TTS model.
 
 ## Current Limitation
 
@@ -167,4 +213,3 @@ These paths are intentionally ignored and removed from history:
 - `generated/`
 - `output/`
 - `__pycache__/`
-
